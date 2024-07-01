@@ -78,3 +78,48 @@ resource "aws_s3_bucket_policy" "s3-policy-get-bucket" {
     policy = data.aws_iam_policy_document.allow_access_for_get_bucket.json
   
 }
+
+# Architecture for https
+locals {
+  s3_origin_id = "cvBucket_iac"
+}
+
+resource "aws_cloudfront_distribution" "s3-distribution" {
+  origin {
+    domain_name = aws_s3_bucket.my-bucket.bucket_regional_domain_name
+    origin_id = local.s3_origin_id
+  }
+
+  enabled = false
+  is_ipv6_enabled = true
+  comment = "distribution created via terraform"
+
+  aliases = ["thepott.dev", "www.thepott.dev"]
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none" 
+      locations = []
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  default_cache_behavior {
+    allowed_methods = ["GET", "HEAD"]
+    cached_methods = [ "GET", "HEAD"]
+    target_origin_id = local.s3_origin_id
+    viewer_protocol_policy = "allow-all"
+
+    forwarded_values {
+      query_string = false
+
+      cookies {
+        forward = "none"
+      }
+    }
+  }
+  
+}
