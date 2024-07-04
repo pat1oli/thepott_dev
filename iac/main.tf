@@ -79,6 +79,47 @@ resource "aws_s3_bucket_policy" "s3-policy-get-bucket" {
   
 }
 
+
+# Architecture for ACM
+resource "aws_acm_certificate" "my-acm-cert" {
+  domain_name = "apot.dev"
+  validation_method = "DNS"
+
+  subject_alternative_names = [ 
+    "www.apot.dev"
+   ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+
+resource "aws_route53_zone" "primary" {
+  name = "apot.dev"
+}
+
+resource "aws_route53_record" "my-record" {
+  zone_id = aws_route53_zone.primary.zone_id
+  name    = "www.apot.dev"
+  type    = "A"
+  ttl     = 300
+  records = [ aws_elb.ok ]
+  alias {
+    name = "apot.dev"
+    zone_id = aws_elb.zone_id
+    evaluate_target_health = true
+  }
+}
+
+
+resource "aws_acm_certificate_validation" "my-valid-cert" {
+  certificate_arn = aws_acm_certificate.my-acm-cert.arn
+  validation_record_fqdns = [for record in aws_route53_record.my-record : record.fqdn]
+  
+}
+
+
 # Architecture for https
 locals {
   s3_origin_id = "cvBucket_iac"
@@ -94,7 +135,7 @@ resource "aws_cloudfront_distribution" "s3-distribution" {
   is_ipv6_enabled = true
   comment = "distribution created via terraform"
 
-  aliases = ["thepott.dev", "www.thepott.dev"]
+  aliases = ["apot.dev", "www.apot.dev"]
 
   restrictions {
     geo_restriction {
@@ -104,7 +145,9 @@ resource "aws_cloudfront_distribution" "s3-distribution" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = false
+    acm_certificate_arn = aws_acm_certificate.my-acm-cert.arn
+    ssl_support_method = "sni-only"
   }
 
   default_cache_behavior {
