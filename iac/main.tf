@@ -7,8 +7,15 @@ terraform {
     }
 }
 
+variable "region" {
+  description = "The AWS region where resources will be deployed."
+  type        = string
+  default     = "us-east-1" # Default to US East (N. Virginia) if not provided
+}
+
+
 provider "aws" {
-    region = "us-east-1"  
+    region = var.region  
 }
 
 
@@ -80,62 +87,33 @@ resource "aws_s3_bucket_policy" "s3-policy-get-bucket" {
 }
 
 
-# Architecture for ACM
-resource "aws_acm_certificate" "my-acm-cert" {
-  domain_name = "apot.dev"
-  validation_method = "DNS"
-
-  subject_alternative_names = [ 
-    "www.apot.dev"
-   ]
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-
-resource "aws_route53_zone" "primary" {
-  name = "apot.dev"
-}
-
-resource "aws_route53_record" "my-record" {
-  zone_id = aws_route53_zone.primary.zone_id
-  name    = "www.apot.dev"
-  type    = "A"
-  ttl     = 300
-  records = [ aws_elb.ok ]
-  alias {
-    name = "apot.dev"
-    zone_id = aws_elb.zone_id
-    evaluate_target_health = true
-  }
-}
-
-
-resource "aws_acm_certificate_validation" "my-valid-cert" {
-  certificate_arn = aws_acm_certificate.my-acm-cert.arn
-  validation_record_fqdns = [for record in aws_route53_record.my-record : record.fqdn]
-  
-}
-
-
 # Architecture for https
 locals {
-  s3_origin_id = "cvBucket_iac"
+  s3_origin_id = "cvBucket_iac" 
+  s3_domain_name = "${aws_s3_bucket.my-bucket.id}.s3-website-${var.region}.amazonaws.com"  #aws_s3_bucket.my-bucket.bucket_regional_domain_name
+}
+
+data "aws_cloudfront_cache_policy" "cache_optimized" {
+  name = "Managed-CachingOptimized"
 }
 
 resource "aws_cloudfront_distribution" "s3-distribution" {
   origin {
-    domain_name = aws_s3_bucket.my-bucket.bucket_regional_domain_name
+    domain_name = local.s3_domain_name
     origin_id = local.s3_origin_id
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1"]
+    }
   }
 
   enabled = false
   is_ipv6_enabled = true
   comment = "distribution created via terraform"
 
-  aliases = ["apot.dev", "www.apot.dev"]
 
   restrictions {
     geo_restriction {
@@ -145,9 +123,7 @@ resource "aws_cloudfront_distribution" "s3-distribution" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = false
-    acm_certificate_arn = aws_acm_certificate.my-acm-cert.arn
-    ssl_support_method = "sni-only"
+    cloudfront_default_certificate = true
   }
 
   default_cache_behavior {
@@ -155,14 +131,9 @@ resource "aws_cloudfront_distribution" "s3-distribution" {
     cached_methods = [ "GET", "HEAD"]
     target_origin_id = local.s3_origin_id
     viewer_protocol_policy = "allow-all"
+    cache_policy_id = data.aws_cloudfront_cache_policy.cache_optimized.id
 
-    forwarded_values {
-      query_string = false
-
-      cookies {
-        forward = "none"
-      }
-    }
+    compress = true
   }
   
 }
