@@ -137,3 +137,33 @@ resource "aws_cloudfront_distribution" "s3-distribution" {
   }
   
 }
+
+# architecture for dynamodb
+
+resource "aws_dynamodb_table" "my-table" {
+  name = "iac-counter"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = {
+    name = "dynamo-iac-table"
+  }
+}
+
+
+resource "aws_dynamodb_table_item" "my-table-item" {
+  table_name = aws_dynamodb_table.my-table.name
+  hash_key   = aws_dynamodb_table.my-table.hash_key
+
+  item = <<ITEM
+{
+  "id": {"S": "visitors"},
+  "counter": {"N": "0"}
+}
+ITEM
+}
