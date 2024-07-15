@@ -10,7 +10,7 @@ terraform {
 variable "region" {
   description = "The AWS region where resources will be deployed."
   type        = string
-  default     = "us-east-1" # Default to US East (N. Virginia) if not provided
+  default     = "us-east-1"
 }
 
 
@@ -166,4 +166,104 @@ resource "aws_dynamodb_table_item" "my-table-item" {
   "counter": {"N": "0"}
 }
 ITEM
+}
+
+
+resource "aws_api_gateway_rest_api" "my-rest-api" {
+  name = "iac-api"
+  description = "My API IAC"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+}
+
+resource "aws_lambda_function" "my_iac_function" {
+  function_name = "MyIacFunction"
+  handler       = "lambda_function.handler"
+  runtime       = "python3.12"
+  role          = "arn:aws:iam::073294649341:role/lambda-visitor-apigateway-role"
+  filename      = "myLambdaFunction.zip"
+
+  environment {
+    variables = {
+      VISITOR_TABLE = "iac-counter"
+    }
+  }
+}
+
+
+
+resource "aws_lambda_permission" "lambda_permission" {
+  statement_id  = "AllowIacRestAPIInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = "MyIacFunction"
+  principal     = "apigateway.amazonaws.com"
+
+  # The /* part allows invocation from any stage, method and resource path
+  # within API Gateway.
+  source_arn = "${aws_api_gateway_rest_api.my-rest-api.execution_arn}/*"
+}
+
+
+resource "aws_api_gateway_resource" "my-resource" {
+  parent_id   = aws_api_gateway_rest_api.my-rest-api.root_resource_id
+  path_part   = "v1"
+  rest_api_id = aws_api_gateway_rest_api.my-rest-api.id
+}
+
+resource "aws_api_gateway_method" "my-get-method" {
+  authorization = "NONE"
+  http_method   = "GET"
+  resource_id   = aws_api_gateway_resource.my-resource.id
+  rest_api_id   = aws_api_gateway_rest_api.my-rest-api.id
+}
+
+resource "aws_api_gateway_integration" "my-api-integration" {
+  http_method = aws_api_gateway_method.my-get-method.http_method
+  resource_id = aws_api_gateway_resource.my-resource.id
+  rest_api_id = aws_api_gateway_rest_api.my-rest-api.id
+  type        = "AWS_PROXY"
+  integration_http_method = "GET"
+  uri = aws_lambda_function.my_iac_function.invoke_arn
+}
+
+resource "aws_api_gateway_method_response" "response_200" {
+  rest_api_id = aws_api_gateway_rest_api.my-rest-api.id
+  resource_id = aws_api_gateway_resource.my-resource.id
+  http_method = aws_api_gateway_method.my-get-method.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Content-Type"     = true
+  }
+}
+
+resource "aws_api_gateway_deployment" "my-api-deploy" {
+  rest_api_id = aws_api_gateway_rest_api.my-rest-api.id
+
+  triggers = {
+    # NOTE: The configuration below will satisfy ordering considerations,
+    #       but not pick up all future REST API changes. More advanced patterns
+    #       are possible, such as using the filesha1() function against the
+    #       Terraform configuration file(s) or removing the .id references to
+    #       calculate a hash against whole resources. Be aware that using whole
+    #       resources will show a difference after the initial implementation.
+    #       It will stabilize to only change when resources change afterwards.
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.my-resource.id,
+      aws_api_gateway_method.my-get-method.id,
+      aws_api_gateway_integration.my-api-integration.id,
+    ]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_api_gateway_stage" "example" {
+  deployment_id = aws_api_gateway_deployment.my-api-deploy.id
+  rest_api_id   = aws_api_gateway_rest_api.my-rest-api.id
+  stage_name    = "STAGE_EXAMPLE"
 }
