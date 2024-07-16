@@ -8,7 +8,7 @@ terraform {
 }
 
 variable "region" {
-  description = "The AWS region where resources will be deployed."
+  description = "The region"
   type        = string
   default     = "us-east-1"
 }
@@ -238,8 +238,9 @@ resource "aws_lambda_function" "my_iac_function" {
   function_name = "MyIacFunction"
   handler       = "lambda_function.handler"
   runtime       = "python3.12"
-  role          = "arn:aws:iam::073294649341:role/lambda-visitor-apigateway-role"
-  filename      = "myLambdaFunction.zip"
+  role          = aws_iam_role.my-lambda-role.arn
+  filename      = data.archive_file.zip.output_path
+  source_code_hash = data.archive_file.zip.output_base64sha256
 
   environment {
     variables = {
@@ -251,7 +252,7 @@ resource "aws_lambda_function" "my_iac_function" {
 data "archive_file" "zip" {
     type = "zip"
     source_dir = "${path.module}/lambda/"
-    output_path = "${path.module}/packedlambda.zip"
+    output_path = "${path.module}/myLambdaFunction.zip"
 }
 
 
