@@ -228,14 +228,30 @@ resource "aws_api_gateway_integration" "my-api-integration" {
   uri = aws_lambda_function.my_iac_function.invoke_arn
 }
 
+
+resource "aws_api_gateway_integration_response" "integration_response" {
+  rest_api_id = aws_api_gateway_rest_api.my-rest-api.id
+  resource_id = aws_api_gateway_resource.my-resource.id
+  http_method = aws_api_gateway_method.my-get-method.http_method
+  status_code = aws_api_gateway_method_response.response_200.status_code
+
+  response_templates = {
+    "application/json" = "{}"
+  }  
+}
+
 resource "aws_api_gateway_method_response" "response_200" {
   rest_api_id = aws_api_gateway_rest_api.my-rest-api.id
   resource_id = aws_api_gateway_resource.my-resource.id
   http_method = aws_api_gateway_method.my-get-method.http_method
   status_code = "200"
 
+  response_models = {
+    "application/json" = "Empty"
+  }
+
   response_parameters = {
-    "method.response.header.Content-Type"     = true
+    "method.response.header.Content-Type" = true
   }
 }
 
