@@ -178,6 +178,62 @@ resource "aws_api_gateway_rest_api" "my-rest-api" {
   }
 }
 
+resource "aws_iam_role" "my-lambda-role" {
+  name = "lambda_iac_dynamodb_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "my-lambda-dynamodb-policy" {
+  name = "lambda_iac_dynamodb_policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid: "Stmt1428341300017",
+        Action: [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:UpdateItem"
+        ],
+        Effect: "Allow",
+        Resource: [
+          "arn:aws:dynamodb:*:*:table/VisitorCount"
+        ]
+      },
+      {
+        Sid: "",
+        Action: [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        Effect: "Allow",
+        Resource: "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "my-lambda-dynamodb-policy-attachment" {
+  role       = aws_iam_role.my-lambda-role.name
+  policy_arn = aws_iam_policy.my-lambda-dynamodb-policy.arn
+}
+
 resource "aws_lambda_function" "my_iac_function" {
   function_name = "MyIacFunction"
   handler       = "lambda_function.handler"
@@ -192,6 +248,12 @@ resource "aws_lambda_function" "my_iac_function" {
   }
 }
 
+data "archive_file" "zip" {
+    type = "zip"
+    source_dir = "${path.module}/lambda/"
+    output_path = "${path.module}/packedlambda.zip"
+}
+
 
 
 resource "aws_lambda_permission" "lambda_permission" {
@@ -200,8 +262,6 @@ resource "aws_lambda_permission" "lambda_permission" {
   function_name = "MyIacFunction"
   principal     = "apigateway.amazonaws.com"
 
-  # The /* part allows invocation from any stage, method and resource path
-  # within API Gateway.
   source_arn = "${aws_api_gateway_rest_api.my-rest-api.execution_arn}/*"
 }
 
@@ -259,13 +319,6 @@ resource "aws_api_gateway_deployment" "my-api-deploy" {
   rest_api_id = aws_api_gateway_rest_api.my-rest-api.id
 
   triggers = {
-    # NOTE: The configuration below will satisfy ordering considerations,
-    #       but not pick up all future REST API changes. More advanced patterns
-    #       are possible, such as using the filesha1() function against the
-    #       Terraform configuration file(s) or removing the .id references to
-    #       calculate a hash against whole resources. Be aware that using whole
-    #       resources will show a difference after the initial implementation.
-    #       It will stabilize to only change when resources change afterwards.
     redeployment = sha1(jsonencode([
       aws_api_gateway_resource.my-resource.id,
       aws_api_gateway_method.my-get-method.id,
