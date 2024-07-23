@@ -5,6 +5,14 @@ terraform {
             version = "~> 5.55"
         }
     }
+
+    cloud {
+    organization = "thepott"
+
+    workspaces {
+      name = "terraform-github-action"
+    }
+  }
 }
 
 variable "region" {
@@ -332,8 +340,8 @@ resource "aws_api_gateway_deployment" "my-api-deploy" {
   }
 }
 
-resource "aws_api_gateway_stage" "example" {
+resource "aws_api_gateway_stage" "my-api-stage" {
   deployment_id = aws_api_gateway_deployment.my-api-deploy.id
   rest_api_id   = aws_api_gateway_rest_api.my-rest-api.id
-  stage_name    = "STAGE_EXAMPLE"
+  stage_name    = "STAGE_1"
 }
